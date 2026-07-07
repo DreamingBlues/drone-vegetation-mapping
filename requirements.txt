@@ -1,0 +1,11 @@
+joblib
+matplotlib
+numpy
+pandas
+Pillow
+rasterio
+scikit-learn
+scipy
+spectral
+tqdm
+zarr

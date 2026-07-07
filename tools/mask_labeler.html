@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Accelerated Land Cover Labeler</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #eee;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      height: 100vh;
+    }
+    .sidebar {
+      padding: 16px;
+      border-right: 1px solid #333;
+      overflow-y: auto;
+      background: #181818;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .sidebar h1 {
+      font-size: 18px;
+      margin: 0;
+      color: #fff;
+    }
+    .section-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #888;
+      letter-spacing: 0.5px;
+      margin-top: 8px;
+    }
+    .sidebar input[type="file"],
+    .sidebar input[type="number"],
+    .sidebar button {
+      width: 100%;
+      padding: 8px;
+      background: #222;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .sidebar button {
+      cursor: pointer;
+      transition: background 0.2s;
+      font-weight: 500;
+    }
+    .sidebar button:hover {
+      background: #333;
+    }
+    .sidebar button.primary {
+      background: #2563eb;
+      border-color: #3b82f6;
+    }
+    .sidebar button.primary:hover {
+      background: #1d4ed8;
+    }
+    .class-btn {
+      text-align: left;
+      border-left: 6px solid transparent !important;
+      margin-bottom: 4px;
+      background: #222;
+    }
+    .class-btn.active {
+      background: #333;
+      border-color: #fff !important;
+      outline: 1px solid #555;
+    }
+    .viewer {
+      position: relative;
+      overflow: hidden;
+      background: #000;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+      image-rendering: pixelated;
+    }
+    .info {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      background: rgba(0,0,0,0.8);
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #aaa;
+      pointer-events: none;
+      border: 1px solid #333;
+    }
+    .controls-hint {
+      color: #666;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="sidebar">
+      <h1>Labeler Pro</h1>
+      
+      <div class="section-label">Image Source</div>
+      <input type="file" id="imageLoader" accept="image/*" />
+
+      <div class="section-label">Brush Settings</div>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <span style="font-size: 12px; width: 50px;">Size:</span>
+        <input type="number" id="brushSize" min="1" max="500" value="15" />
+      </div>
+
+      <div class="section-label">Vegetation Classes</div>
+      <div id="classList"></div>
+
+      <div class="section-label">Actions</div>
+      <button id="clearCurrentBtn">Clear Selected Class</button>
+      <button id="clearAllBtn" style="color: #f87171;">Clear All Labels</button>
+      
+      <div class="section-label">Export (Optimized)</div>
+      <button id="exportMaskBtn" class="primary">Export PNG Mask</button>
+      <button id="exportCsvBtn">Export Sparse CSV</button>
+
+      <div class="controls-hint">
+        Right-click drag to pan<br>
+        Scroll to zoom<br>
+        Shift + Left-click to erase
+      </div>
+    </div>
+
+    <div class="viewer" id="viewer">
+      <canvas id="canvas"></canvas>
+      <div class="info" id="info">Waiting for image...</div>
+    </div>
+  </div>
+
+  <script>
+    const classes = [
+      { id: 'tree_canopy_shrubs', name: 'Tree / Canopy / Shrubs', color: 'rgb(34,197,94)' },
+      { id: 'grassland', name: 'Grassland', color: 'rgb(132,204,22)' },
+      { id: 'cropland', name: 'Cropland / Farmland', color: 'rgb(234,179,8)' },
+      { id: 'bare_soil', name: 'Bare soil / Dirt', color: 'rgb(249,115,22)' },
+      { id: 'water', name: 'Water', color: 'rgb(59,130,246)' }
+    ];
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const viewer = document.getElementById('viewer');
+    const info = document.getElementById('info');
+    const imageLoader = document.getElementById('imageLoader');
+    const brushSizeInput = document.getElementById('brushSize');
+    const classList = document.getElementById('classList');
+    const exportMaskBtn = document.getElementById('exportMaskBtn');
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    const clearCurrentBtn = document.getElementById('clearCurrentBtn');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+
+    let selectedClass = classes[0].id;
+    let img = null;
+    let imgWidth = 0;
+    let imgHeight = 0;
+    
+    // The GPU-accelerated drawing surface
+    let overlayCanvas = null;
+    let overlayCtx = null;
+
+    let scale = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    let isPainting = false;
+    let isPanning = false;
+    let lastX = 0;
+    let lastY = 0;
+    let lastPaintX = null;
+    let lastPaintY = null;
+    let needsDraw = false;
+
+    function createOverlay() {
+      overlayCanvas = document.createElement('canvas');
+      overlayCanvas.width = imgWidth;
+      overlayCanvas.height = imgHeight;
+      overlayCtx = overlayCanvas.getContext('2d');
+      overlayCtx.clearRect(0, 0, imgWidth, imgHeight);
+    }
+
+    function resizeCanvas() {
+      const rect = viewer.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      requestDraw();
+    }
+
+    function renderClassList() {
+      classList.innerHTML = '';
+      for (const cls of classes) {
+        const btn = document.createElement('button');
+        btn.className = 'class-btn' + (cls.id === selectedClass ? ' active' : '');
+        btn.textContent = cls.name;
+        btn.style.borderLeftColor = cls.color;
+        btn.onclick = () => {
+          selectedClass = cls.id;
+          renderClassList();
+        };
+        classList.appendChild(btn);
+      }
+    }
+
+    function fitImageToView() {
+      if (!img) return;
+      const sx = canvas.width / imgWidth;
+      const sy = canvas.height / imgHeight;
+      scale = Math.min(sx, sy) * 0.9;
+      offsetX = (canvas.width - imgWidth * scale) / 2;
+      offsetY = (canvas.height - imgHeight * scale) / 2;
+    }
+
+    function requestDraw() {
+      if (needsDraw) return;
+      needsDraw = true;
+      requestAnimationFrame(() => {
+        needsDraw = false;
+        draw();
+      });
+    }
+
+    function draw() {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (!img) return;
+      
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+      ctx.scale(scale, scale);
+      
+      // Draw base image
+      ctx.drawImage(img, 0, 0);
+      
+      // Draw labels with 60% opacity for better visibility
+      ctx.globalAlpha = 0.6;
+      if (overlayCanvas) ctx.drawImage(overlayCanvas, 0, 0);
+      
+      ctx.restore();
+    }
+
+    function screenToImage(x, y) {
+      return {
+        x: (x - offsetX) / scale,
+        y: (y - offsetY) / scale
+      };
+    }
+
+    function paintLine(x0, y0, x1, y1, erase = false) {
+      if (!img || !overlayCtx) return;
+
+      const p0 = screenToImage(x0, y0);
+      const p1 = screenToImage(x1, y1);
+      const radius = Math.max(1, parseInt(brushSizeInput.value, 10) || 1);
+      const cls = classes.find(c => c.id === selectedClass);
+
+      overlayCtx.save();
+      if (erase) {
+        overlayCtx.globalCompositeOperation = 'destination-out';
+      } else {
+        overlayCtx.globalCompositeOperation = 'source-over';
+        overlayCtx.strokeStyle = cls.color;
+      }
+
+      overlayCtx.lineWidth = radius * 2;
+      overlayCtx.lineCap = 'round';
+      overlayCtx.lineJoin = 'round';
+      
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(p0.x, p0.y);
+      overlayCtx.lineTo(p1.x, p1.y);
+      overlayCtx.stroke();
+      overlayCtx.restore();
+
+      requestDraw();
+    }
+
+    function clearAll() {
+      if (!overlayCtx) return;
+      overlayCtx.clearRect(0, 0, imgWidth, imgHeight);
+      requestDraw();
+    }
+
+    function exportMask() {
+      if (!overlayCanvas) return;
+      const link = document.createElement('a');
+      link.download = 'label_mask.png';
+      link.href = overlayCanvas.toDataURL('image/png');
+      link.click();
+    }
+
+    function exportCSV() {
+      if (!overlayCtx) return;
+      info.textContent = "Processing sparse coordinates...";
+      
+      // Process in a slight timeout to prevent UI freeze
+      setTimeout(() => {
+        const imageData = overlayCtx.getImageData(0, 0, imgWidth, imgHeight).data;
+        const csvChunks = ['class,row,col\n'];
+        
+        for (let i = 0; i < imageData.length; i += 4) {
+          const alpha = imageData[i+3];
+          if (alpha > 50) { // Only export labeled pixels
+            const idx = i / 4;
+            const r = imageData[i];
+            const g = imageData[i+1];
+            const b = imageData[i+2];
+            
+            const row = Math.floor(idx / imgWidth);
+            const col = idx % imgWidth;
+            
+            // Match color to class
+            const cls = classes.find(c => c.color === `rgb(${r},${g},${b})`);
+            const classId = cls ? cls.id : 'unknown';
+            
+            csvChunks.push(`${classId},${row},${col}\n`);
+          }
+        }
+        
+        const blob = new Blob(csvChunks, { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'land_cover_sparse.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        info.textContent = "Export complete.";
+      }, 50);
+    }
+
+    // Events
+    imageLoader.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      const newImg = new Image();
+      newImg.onload = () => {
+        img = newImg;
+        imgWidth = img.width;
+        imgHeight = img.height;
+        createOverlay();
+        fitImageToView();
+        requestDraw();
+        info.textContent = `Loaded: ${imgWidth}x${imgHeight}`;
+        URL.revokeObjectURL(url);
+      };
+      newImg.src = url;
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+      lastX = e.clientX;
+      lastY = e.clientY;
+      if (e.button === 2) {
+        isPanning = true;
+      } else if (e.button === 0) {
+        isPainting = true;
+        lastPaintX = e.offsetX;
+        lastPaintY = e.offsetY;
+        paintLine(e.offsetX, e.offsetY, e.offsetX, e.offsetY, e.shiftKey);
+      }
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      const p = screenToImage(e.offsetX, e.offsetY);
+      
+      if (img) {
+        info.textContent = `R: ${Math.round(p.y)} C: ${Math.round(p.x)} | Zoom: ${Math.round(scale * 100)}%`;
+      }
+
+      if (isPainting) {
+        paintLine(lastPaintX, lastPaintY, e.offsetX, e.offsetY, e.shiftKey);
+        lastPaintX = e.offsetX;
+        lastPaintY = e.offsetY;
+      } else if (isPanning) {
+        offsetX += e.clientX - lastX;
+        offsetY += e.clientY - lastY;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        requestDraw();
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      isPainting = false;
+      isPanning = false;
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      if (!img) return;
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+      const mouseX = e.offsetX;
+      const mouseY = e.offsetY;
+      const before = screenToImage(mouseX, mouseY);
+      
+      scale *= zoomFactor;
+      scale = Math.max(0.01, Math.min(scale, 100));
+      
+      offsetX = mouseX - before.x * scale;
+      offsetY = mouseY - before.y * scale;
+      requestDraw();
+    }, { passive: false });
+
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    
+    exportMaskBtn.onclick = exportMask;
+    exportCsvBtn.onclick = exportCSV;
+    clearAllBtn.onclick = clearAll;
+    window.addEventListener('resize', resizeCanvas);
+
+    renderClassList();
+    resizeCanvas();
+  </script>
+</body>
+</html>

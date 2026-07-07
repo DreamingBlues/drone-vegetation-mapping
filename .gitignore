@@ -1,0 +1,29 @@
+# Raw hyperspectral/RGB data kept outside this repository
+KR1_K4/
+SA1_K4/
+*.dat
+*.hdr
+*.tif
+*.tfw
+*.zarr/
+
+# Derived arrays, trained models, and large local outputs
+workspace/data/
+*.npy
+*.npz
+*.joblib
+
+# Notebook/cache clutter
+.ipynb_checkpoints/
+__pycache__/
+.pytest_cache/
+
+# Local environments
+.venv/
+venv/
+env/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
