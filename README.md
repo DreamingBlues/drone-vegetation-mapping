@@ -34,17 +34,20 @@ The dataset is aerial hyperspectral vegetation imagery from the SA1 region.
 | Sensor type | HySpex VNIR + SWIR |
 | Classes | Water, Soil, Canopy, Grass |
 
-Manual masks were created for the four land-cover classes and used to generate labeled samples. A balanced stratified sample of 200,000 pixels was used: 50,000 pixels per class.
 
 RGB reference image:
 
 <img width="274" height="344" alt="image" src="https://github.com/user-attachments/assets/c75a3575-b11c-43b0-aca1-8b445f6d8fde" />
+
 
 ## Workflow
 
 ### 1. Data Preparation
 
 The original hyperspectral cube was converted to Zarr format for chunked processing. This made it possible to work with the large image without loading the full dataset into memory.
+
+Manual masks were created for the four land-cover classes and used to generate labeled samples. A balanced stratified sample of 200,000 pixels was used: 50,000 pixels per class.
+
 
 ### 2. Exploratory Data Analysis
 
