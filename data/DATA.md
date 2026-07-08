@@ -1,6 +1,6 @@
 # Data
 
-This repository does not redistribute the raw hyperspectral, RGB, Zarr, large CSV mask exports, derived NumPy, or trained model files used during local analysis.
+This repository does not redistribute the raw hyperspectral, Zarr, derived NumPy, or trained model files used during local analysis.
 
 The analysis uses data associated with:
 
