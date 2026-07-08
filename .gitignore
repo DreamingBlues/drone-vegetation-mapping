@@ -27,5 +27,4 @@ env/
 .DS_Store
 Thumbs.db
 .vscode/
-notebooks/4_pca_old.ipynb
-notebooks/5_clustering_old.ipynb
+*_old.ipynb
