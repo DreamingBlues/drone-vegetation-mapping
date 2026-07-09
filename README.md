@@ -108,6 +108,47 @@ This supports the main conclusion:
 
 > Hyperspectral vegetation data contains strong redundancy, and a carefully selected small set of wavelength bands can preserve much of the useful classification information.
 
+## How to Run
+
+Run the notebooks in order:
+
+```text
+1. Exploratory Data Analysis
+2. Convert hyperspectral cube to Zarr
+3. Create masks and stratified samples
+4. Compute PCA and global statistics
+5. Run wavelength selection and K-Means comparison
+6. Train Random Forest models and generate prediction maps
+```
+
+## Requirements
+
+Main Python libraries used:
+
+```text
+numpy
+pandas
+matplotlib
+scikit-learn
+zarr
+tqdm
+rasterio
+Pillow
+joblib
+```
+
+Install dependencies with:
+
+```bash
+pip install numpy pandas matplotlib scikit-learn zarr tqdm rasterio pillow joblib
+```
+
+Notebook 6 assumes that `global_stats.npz` already contains the sampled pixels, full-band spectra, standardized spectra, global mean/std, and PCA components.
+
+## Notes
+
+The full hyperspectral dataset is large and is not included in this repository. The notebooks assume the data is available locally in the expected directory structure.
+
 ## Repository Structure
 
 ```text
@@ -133,47 +174,6 @@ This supports the main conclusion:
 │
 └── README.md
 ```
-
-## Requirements
-
-Main Python libraries used:
-
-```text
-numpy
-pandas
-matplotlib
-scikit-learn
-zarr
-tqdm
-rasterio
-Pillow
-joblib
-```
-
-Install dependencies with:
-
-```bash
-pip install numpy pandas matplotlib scikit-learn zarr tqdm rasterio pillow joblib
-```
-
-## How to Run
-
-Run the notebooks in order:
-
-```text
-1. Exploratory Data Analysis
-2. Convert hyperspectral cube to Zarr
-3. Create masks and stratified samples
-4. Compute PCA and global statistics
-5. Run wavelength selection and K-Means comparison
-6. Train Random Forest models and generate prediction maps
-```
-
-Notebook 6 assumes that `global_stats.npz` already contains the sampled pixels, full-band spectra, standardized spectra, global mean/std, and PCA components.
-
-## Notes
-
-The full hyperspectral dataset is large and is not included in this repository. The notebooks assume the data is available locally in the expected directory structure.
 
 
 ## Limitations
